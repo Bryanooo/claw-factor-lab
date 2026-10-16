@@ -4,6 +4,7 @@ import uuid
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from psycopg.types.json import Jsonb
 
 from .db import ROOT, connect, enqueue, event, init_db, seed_factors
@@ -22,6 +23,8 @@ app=FastAPI(title='claw-factor-lab',version='0.1.0',lifespan=lifespan)
 # Local-only deployment; reject unexpected Host headers (including DNS rebinding).
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 app.add_middleware(TrustedHostMiddleware,allowed_hosts=['localhost','127.0.0.1','[::1]','api'])
+
+app.mount('/assets',StaticFiles(directory=Path(__file__).resolve().parent.parent/'web/assets'),name='assets')
 
 api=APIRouter(prefix='/api/v1')
 
