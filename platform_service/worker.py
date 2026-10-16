@@ -10,7 +10,7 @@ import uuid
 
 from psycopg.types.json import Jsonb
 from .artifacts import insert, inventory
-from .db import ENGINE, ROOT, connect, event, heartbeat, init_db
+from .db import ENGINE, ALPHA191_ENGINE, ROOT, connect, event, heartbeat, init_db
 
 STOP=False
 
@@ -32,7 +32,7 @@ def claim():
         row=conn.execute("""UPDATE runs SET status='running',attempt=attempt+1,worker_id=%s,lease_token=%s,
             lease_until=now()+interval '120 seconds',started_at=now(),finished_at=NULL,error=NULL
             WHERE id=%s RETURNING *""",(os.environ.get('WORKER_ID','daily-worker'),token,row['id'])).fetchone()
-        event(conn,row['id'],'started',{'attempt':row['attempt'],'engine':ENGINE})
+        event(conn,row['id'],'started',{'attempt':row['attempt'],'engine':row['spec']['engine']})
         return row
 
 
@@ -57,8 +57,11 @@ def execute(row):
     (folder/'spec.json').write_text(json.dumps(row['spec'],indent=2))
     state='failed';error=None;result=None;child=None
     try:
-        if row['spec']['engine']!=ENGINE:raise ValueError('Unsupported engine version for this worker')
+        if row['spec']['engine'] not in (ENGINE,ALPHA191_ENGINE):raise ValueError('Unsupported engine version for this worker')
         with connect() as conn:ds=conn.execute('SELECT * FROM datasets WHERE id=%s',(row['dataset_id'],)).fetchone()
+        if row['spec']['engine']==ALPHA191_ENGINE:
+            from factors.alpha191 import implementation_hash
+            if row['spec'].get('factor_implementation_sha256')!=implementation_hash():raise ValueError('Factor implementation changed; use the original engine image')
         from pipeline import verify_provider
         source=ROOT/ds['provider_path'];manifest=verify_provider(source)
         if manifest['source_manifest_sha256']!=row['spec']['source_hash']:raise ValueError('Dataset source identity changed')

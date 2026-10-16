@@ -51,21 +51,32 @@ def status():
     with connect() as conn:
         counts=conn.execute('SELECT status,count(*) FROM runs GROUP BY status').fetchall()
         beats=conn.execute("SELECT name,updated_at,updated_at>now()-interval '60 seconds' AS healthy FROM heartbeats ORDER BY name").fetchall()
-    return {'service':'claw-factor-lab','version':'0.1.0','runs':counts,'services':beats,'template':'daily-baselines-v1'}
+    return {'service':'claw-factor-lab','version':'0.1.0','runs':counts,'services':beats,'template':'daily-baselines-v1','templates':['daily-baselines-v1','daily-alpha191-v1']}
 
 
 @api.get('/datasets')
 def datasets():
     with connect() as conn:
-        return conn.execute('SELECT id,name,source_hash,config,acceptance,created_at FROM datasets ORDER BY created_at DESC').fetchall()
+        rows=conn.execute('SELECT * FROM datasets ORDER BY created_at DESC').fetchall()
+    from factors.qlib_bridge import missing_inputs
+    for row in rows:
+        missing=missing_inputs(ROOT/row.pop('provider_path'))
+        row.pop('snapshot_path')
+        row['alpha191']={'implemented':191,'input_ready':191-len(missing),'missing_inputs':missing}
+    return rows
 
 
 @api.get('/factors')
-def factors(q:str=Query(default='',max_length=120),limit:int=Query(default=50,ge=1,le=200),offset:int=Query(default=0,ge=0)):
+def factors(q:str=Query(default='',max_length=120),factor_set:str|None=None,limit:int=Query(default=50,ge=1,le=200),offset:int=Query(default=0,ge=0)):
     with connect() as conn:
-        params=('%'+q+'%',)
-        total=conn.execute('SELECT count(*) AS n FROM factor_versions WHERE name ILIKE %s',params).fetchone()['n']
-        rows=conn.execute('SELECT * FROM factor_versions WHERE name ILIKE %s ORDER BY id LIMIT %s OFFSET %s',params+(limit,offset)).fetchall()
+        params=('%'+q+'%',factor_set,factor_set)
+        condition="name ILIKE %s AND (%s::text IS NULL OR id IN (SELECT jsonb_array_elements_text(members) FROM factor_sets WHERE id=%s))"
+        total=conn.execute('SELECT count(*) AS n FROM factor_versions WHERE '+condition,params).fetchone()['n']
+        rows=conn.execute('SELECT * FROM factor_versions WHERE '+condition+' ORDER BY id LIMIT %s OFFSET %s',params+(limit,offset)).fetchall()
+    from factors.alpha191 import NOTES,required_fields
+    for row in rows:
+        if row['name'].startswith('alpha191.'):
+            number=int(row['name'].split('.')[1]);row['required_fields']=required_fields(number);row['implementation_note']=NOTES.get(number,'Versioned operator conventions apply.')
     return {'items':rows,'total':total,'limit':limit,'offset':offset}
 
 
@@ -146,6 +157,11 @@ def add_schedule(body:ScheduleRequest):
     with connect() as conn:
         ds=conn.execute('SELECT config FROM datasets WHERE id=%s',(body.research.dataset_id,)).fetchone()
         if not ds:raise HTTPException(404,'Dataset not found')
+        if body.research.factor_set=='alpha191@gtja-2017-v1' and body.research.missing_factor_policy=='error':
+            from factors.qlib_bridge import missing_inputs
+            full=conn.execute('SELECT provider_path FROM datasets WHERE id=%s',(body.research.dataset_id,)).fetchone()
+            missing=missing_inputs(ROOT/full['provider_path'])
+            if missing:raise HTTPException(409,'Alpha191 missing required inputs: '+str(missing))
         if body.research.parameters.topk>len(ds['config']['symbols']):
             raise HTTPException(409,'topk exceeds dataset universe')
         conn.execute('''INSERT INTO schedules(id,name,request,interval_seconds,enabled,next_run_at) VALUES(%s,%s,%s,%s,%s,%s)''',

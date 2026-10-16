@@ -27,7 +27,7 @@ def read_snapshot(root):
     manifest = json.loads((root / 'manifest.json').read_text())
     if manifest['status'] != 'extracted':
         raise ValueError('Incomplete snapshot')
-    for evidence in manifest.get('source_audits', {}).values():
+    for evidence in [*manifest.get('source_audits', {}).values(), *manifest.get('supplemental_sources', {}).values()]:
         if 'sha256' in evidence and hashlib.sha256((root / evidence['file']).read_bytes()).hexdigest() != evidence['sha256']:
             raise ValueError('Source audit checksum mismatch')
     result = {}

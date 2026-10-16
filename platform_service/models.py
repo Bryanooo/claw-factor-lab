@@ -1,5 +1,6 @@
 from datetime import datetime
 from uuid import UUID
+from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -24,6 +25,8 @@ class RunRequest(BaseModel):
     title: str=Field(default='Daily baseline research',min_length=1,max_length=160)
     external_ref: str|None=Field(default=None,max_length=200)
     idempotency_key: str=Field(min_length=8,max_length=160,pattern=r'^[A-Za-z0-9_.:-]+$')
+    factor_set: Literal['alpha158@qlib-0.9.7','alpha191@gtja-2017-v1']='alpha158@qlib-0.9.7'
+    missing_factor_policy: Literal['error','exclude']='error'
     parameters: Parameters=Field(default_factory=Parameters)
 
 

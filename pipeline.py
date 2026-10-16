@@ -94,17 +94,23 @@ def research(provider, output):
     calendar = pd.DatetimeIndex(D.calendar(start_time=config['start'], end_time=config['end']))
     validate_segments(config, calendar)
     symbols = [symbol_id(c) for c in config['symbols']]
-    handler = Alpha158(start_time=config['start'], end_time=config['end'], instruments=symbols,
-                       fit_start_time=config['segments']['train'][0], fit_end_time=config['segments']['train'][1],
-                       infer_processors=[], learn_processors=[{'class':'DropnaLabel'}],
-                       label=([LABEL], ['LABEL0']))
+    alpha191_quality = None
+    selected_set = config.get('factor_set', 'alpha158@qlib-0.9.7')
+    if selected_set == 'alpha191@gtja-2017-v1':
+        from factors.qlib_bridge import make_handler
+        handler, alpha191_quality = make_handler(provider,config,symbols,LABEL,output)
+    else:
+        handler = Alpha158(start_time=config['start'], end_time=config['end'], instruments=symbols,
+                           fit_start_time=config['segments']['train'][0], fit_end_time=config['segments']['train'][1],
+                           infer_processors=[], learn_processors=[{'class':'DropnaLabel'}],
+                           label=([LABEL], ['LABEL0']))
     dataset = DatasetH(handler=handler, segments={k: tuple(v) for k,v in config['segments'].items()})
     quality = {}
     for name in config['segments']:
         features = dataset.prepare(name, col_set='feature')
         quality[name] = {'rows': len(features), 'features': features.shape[1],
                          'missing_fraction': float(features.isna().to_numpy().mean())}
-        if len(features) == 0 or features.isna().all().any():
+        if len(features) == 0 or (not alpha191_quality and features.isna().all().any()):
             raise ValueError('Empty segment or wholly missing feature')
     labels = dataset.prepare('test', col_set='label').iloc[:,0]
     factor = D.features(symbols, ['$close/Ref($close,20)-1'], start_time=config['segments']['test'][0],
@@ -120,7 +126,7 @@ def research(provider, output):
         prediction = model.predict(dataset).sort_index()
         model.model.save_model(str(output/'lightgbm.txt'))
         results = {}
-        for name, signal in [('momentum20', momentum), ('alpha158_lightgbm', prediction)]:
+        for name, signal in [('momentum20', momentum), ('alpha191_lightgbm' if alpha191_quality else 'alpha158_lightgbm', prediction)]:
             signal.to_csv(output/f'{name}-predictions.csv', header=['score'])
             strategy = TopkDropoutStrategy(signal=signal, topk=config['topk'], n_drop=config['n_drop'],
                                            hold_thresh=1, only_tradable=False, forbid_all_trade_at_limit=False)
@@ -147,7 +153,7 @@ def research(provider, output):
         'qlib_version':qlib.__version__, 'recorder_id': recorder_id,
         'source_manifest_sha256':manifest['source_manifest_sha256'], 'config':config,
         'label':LABEL, 'timing':'Features at t close, Qlib previous-session signal, execution at t+1 open.',
-        'feature_quality': quality, 'results':results,
+        'feature_quality': quality, 'results':results, 'alpha191_quality': alpha191_quality,
         'model_parameters': model.params, 'best_iteration': model.model.best_iteration,
         'training_round_limit':150, 'early_stopping_rounds':20, 'portfolio_risk_degree':0.95,
         'limitations':[
@@ -178,6 +184,8 @@ def research(provider, output):
     (output/'source').mkdir()
     for p in Path('.').glob('*.py'):
         shutil.copy2(p, output/'source'/p.name)
+    if alpha191_quality:
+        shutil.copytree(Path(__file__).parent/'factors',output/'source/factors',ignore=shutil.ignore_patterns('__pycache__'))
     print(json.dumps(report['results'], indent=2))
 
 

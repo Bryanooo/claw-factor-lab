@@ -41,8 +41,8 @@ def test_local_access_and_factor_registry(client):
     assert client.get('/api/v1/runs',headers={'Host':'untrusted.example'}).status_code==400
     assert client.get('/health/ready').status_code==200
     d=client.get('/api/v1/factors',headers=headers()).json()
-    assert d['total']==159
-    assert len(client.get('/api/v1/factor-sets',headers=headers()).json())==2
+    assert d['total']==350
+    assert len(client.get('/api/v1/factor-sets',headers=headers()).json())==3
 
 
 def test_idempotency_and_conflict(client):
@@ -125,3 +125,28 @@ def test_schedule_rejects_invalid_universe(client):
     research=request();research['parameters']={'topk':20}
     body={'name':'invalid','research':research,'interval_seconds':60,'first_run_at':datetime.now(timezone.utc).isoformat()}
     assert client.post('/api/v1/schedules',json=body,headers=headers()).status_code==409
+
+
+def test_alpha191_registry_filter_and_explicit_exclusion(client,monkeypatch):
+    from factors import qlib_bridge
+    monkeypatch.setattr(qlib_bridge,'missing_inputs',lambda _: {'alpha191.030':['MKT','SMB','HML']})
+    d=client.get('/api/v1/factors?factor_set=alpha191@gtja-2017-v1&limit=200').json()
+    assert d['total']==191 and len(d['items'])==191
+    assert d['items'][29]['name']=='alpha191.030' and 'SMB' in d['items'][29]['required_fields']
+    body=request();body['factor_set']='alpha191@gtja-2017-v1'
+    assert client.post('/api/v1/runs',json=body).status_code==409
+    body['missing_factor_policy']='exclude'
+    response=client.post('/api/v1/runs',json=body);assert response.status_code==202
+    run=client.get('/api/v1/runs/'+response.json()['id']).json()
+    assert sorted(len(f['members']) for f in run['spec']['factor_sets'])==[1,191]
+    assert 'alpha191.030' in run['spec']['excluded_factors']
+    assert run['spec']['config']['missing_factor_policy']=='exclude'
+    assert client.post('/api/v1/runs',json=body).json()['created']==False
+
+
+def test_alpha191_schedule_rejects_missing_inputs(client,monkeypatch):
+    from factors import qlib_bridge
+    monkeypatch.setattr(qlib_bridge,'missing_inputs',lambda _: {'alpha191.030':['MKT','SMB','HML']})
+    research=request();research['factor_set']='alpha191@gtja-2017-v1'
+    body={'name':'missing ff','research':research,'interval_seconds':60,'first_run_at':datetime.now(timezone.utc).isoformat()}
+    assert client.post('/api/v1/schedules',json=body).status_code==409

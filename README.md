@@ -46,8 +46,8 @@ docker compose run --rm -v /absolute/export:/import:ro api python scripts/regist
 
 ## 首版支持范围
 
-- 159 个版本化因子条目：Alpha158 的 158 个特征，以及 Momentum20。
-- 两个内置组合：Momentum20 排序、Alpha158 + LightGBM，均使用 TopkDropout 日频回测。
+- 350 个版本化因子条目：Alpha158 的 158 个特征、Alpha191 的 191 个因子，以及 Momentum20。
+- 内置 Alpha158 / Alpha191 因子集可选，分别与 LightGBM 结合，并保留 Momentum20 基线，使用 TopkDropout 日频回测。Alpha191 的数据依赖、歧义约定和排除策略见 [Alpha191 实现说明](docs/alpha191.md)。
 - API 提交任务、幂等去重、状态查询、取消、失败重试、事件记录和附件下载。
 - 提交时冻结数据哈希、配置、因子组合和引擎版本；重试保留独立 attempt。
 - 简单固定间隔调度，默认禁用；错过多个周期时合并触发一次。
