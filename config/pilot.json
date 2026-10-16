@@ -1,0 +1,10 @@
+{
+  "start": "2020-01-01", "end": "2025-12-31",
+  "symbols": ["600000.SH", "600030.SH", "600036.SH", "600519.SH", "601166.SH", "601318.SH", "601398.SH", "000001.SZ", "000002.SZ", "000333.SZ", "000651.SZ", "000858.SZ"],
+  "universe_kind": "fixed_engineering_sample_not_historical_index",
+  "benchmark": "000300.SH",
+  "segments": {"train": ["2020-06-01", "2022-12-23"], "valid": ["2023-01-03", "2023-12-22"], "test": ["2024-01-02", "2025-12-26"]},
+  "account": 1000000, "topk": 4, "n_drop": 1,
+  "buy_cost": 0.001, "sell_cost": 0.002, "min_cost": 5,
+  "seed": 42
+}

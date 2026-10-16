@@ -1,0 +1,77 @@
+name: claw-factor-lab
+x-app: &app
+  image: claw-factor-lab:0.1.0
+  build: .
+  init: true
+  restart: unless-stopped
+  environment: &env
+    DB_HOST: postgres
+    DB_NAME: factorlab
+    DB_USER: factorlab
+    DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    STORAGE_ROOT: /storage
+    CLAW_DATA_URL: ${CLAW_DATA_URL:-http://host.docker.internal:8000}
+    OMP_NUM_THREADS: '2'
+    OPENBLAS_NUM_THREADS: '2'
+    PYTHONHASHSEED: '0'
+  volumes:
+    - ./storage:/storage
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  depends_on:
+    postgres:
+      condition: service_healthy
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: factorlab
+      POSTGRES_USER: factorlab
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U factorlab -d factorlab']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    mem_limit: 512m
+  api:
+    <<: *app
+    command: [uvicorn, 'platform_service.api:app', --host, 0.0.0.0, --port, '8080']
+    ports:
+      - '127.0.0.1:${FACTORLAB_PORT:-8610}:8080'
+    cpus: 1
+    mem_limit: 512m
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready', timeout=5)"]
+      interval: 15s
+      timeout: 8s
+      retries: 5
+  worker:
+    <<: *app
+    command: [python, -m, platform_service.worker]
+    cpus: 2
+    mem_limit: 3g
+    stop_grace_period: 20s
+    environment:
+      <<: *env
+      WORKER_ID: daily-01
+    healthcheck:
+      test: [CMD, python, -m, platform_service.health, worker]
+      interval: 20s
+      timeout: 5s
+      retries: 4
+  scheduler:
+    <<: *app
+    command: [python, -m, platform_service.scheduler]
+    cpus: 0.25
+    mem_limit: 256m
+    healthcheck:
+      test: [CMD, python, -m, platform_service.health, scheduler]
+      interval: 20s
+      timeout: 5s
+      retries: 4
+volumes:
+  postgres_data:

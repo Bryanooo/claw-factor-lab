@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+storage/
+runtime/
+workspace/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+*.log
